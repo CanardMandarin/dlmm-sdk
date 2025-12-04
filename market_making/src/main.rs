@@ -9,7 +9,7 @@ use crate::pair_config::*;
 use crate::state::*;
 use crate::utils::*;
 
-use anchor_client::solana_client::nonblocking::rpc_client::*;
+use solana_client::nonblocking::rpc_client::*;
 use anchor_client::solana_sdk::pubkey::*;
 use anchor_client::solana_sdk::signature::*;
 use anchor_client::solana_sdk::*;

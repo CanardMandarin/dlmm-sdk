@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::*;
-use anchor_client::solana_client::rpc_client::RpcClient as BlockingRpcClient;
+use solana_client::rpc_client::RpcClient as BlockingRpcClient;
 use anchor_client::{
-    solana_client::nonblocking::rpc_client::RpcClient, solana_sdk::account::Account,
+    solana_sdk::account::Account,
 };
+use solana_client::nonblocking::rpc_client::RpcClient;
 use anchor_spl::{
     associated_token::get_associated_token_address_with_program_id,
     token::spl_token,

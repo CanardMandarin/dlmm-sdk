@@ -330,7 +330,7 @@ pub fn get_bin_array_pubkeys_for_swap(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_client::solana_client::rpc_response::RpcKeyedAccount;
+    use solana_client::rpc_response::RpcKeyedAccount;
     use anchor_client::solana_sdk::clock::Clock;
     use anchor_client::{
         solana_client::nonblocking::rpc_client::RpcClient, solana_sdk::pubkey::Pubkey, Cluster,

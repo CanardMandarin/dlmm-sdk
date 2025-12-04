@@ -30,3 +30,4 @@ itertools = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths"] }
 spl-memo = { workspace = true, features = ["no-entrypoint"] }
 bytemuck = { workspace = true }
+solana-client = { workspace = true }
