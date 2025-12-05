@@ -335,6 +335,7 @@ pub struct SwapToBinQuote {
     pub swap_for_y: bool,
     pub bins_crossed: u32,
     pub amount_in_with_fees: u64,
+    pub amount_in: u64,
     pub trading_fee: u64,
 }
 
@@ -364,6 +365,7 @@ pub fn quote_amount_in_to_reach_bin(
     let epoch = clock.epoch;
 
     let mut bins_crossed: u32 = 0;
+    let mut total_amount_in: u64 = 0;
     let mut total_amount_in_with_fees: u64 = 0;
     let mut total_trading_fee: u64 = 0;
     let mut consumed_liquidity = false;
@@ -400,6 +402,9 @@ pub fn quote_amount_in_to_reach_bin(
                     let bin_amount_with_fee =
                         bin_amount_in.checked_add(bin_fee).context("MathOverflow")?;
 
+                    total_amount_in = total_amount_in
+                        .checked_add(bin_amount_in)
+                        .context("MathOverflow")?;
                     total_amount_in_with_fees = total_amount_in_with_fees
                         .checked_add(bin_amount_with_fee)
                         .context("MathOverflow")?;
@@ -424,6 +429,7 @@ pub fn quote_amount_in_to_reach_bin(
         target_bin: target_bin_id,
         swap_for_y,
         bins_crossed,
+        amount_in: total_amount_in,
         amount_in_with_fees: total_amount_in_with_fees,
         trading_fee: total_trading_fee,
     })
