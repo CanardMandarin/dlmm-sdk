@@ -327,6 +327,108 @@ pub fn get_bin_array_pubkeys_for_swap(
     Ok(bin_array_pubkeys)
 }
 
+
+
+#[derive(Debug)]
+pub struct SwapToBinQuote {
+    pub target_bin: i32,
+    pub swap_for_y: bool,
+    pub bins_crossed: u32,
+    pub amount_in_with_fees: u64,
+    pub trading_fee: u64,
+}
+
+pub fn quote_amount_in_to_reach_bin(
+    lb_pair_pubkey: Pubkey,
+    lb_pair: &LbPair,
+    target_bin_id: i32,
+    bin_arrays: HashMap<Pubkey, BinArray>,
+    clock: &Clock,
+) -> Result<SwapToBinQuote> {
+    ensure!(
+        target_bin_id >= MIN_BIN_ID && target_bin_id <= MAX_BIN_ID,
+        "Target bin is out of bounds"
+    );
+
+    let mut lb_pair = *lb_pair;
+
+    let current_timestamp = clock.unix_timestamp as i64;
+    lb_pair.update_references(current_timestamp)?;
+
+    ensure!(
+        target_bin_id != lb_pair.active_id,
+        "Target bin already active"
+    );
+
+    let swap_for_y = target_bin_id < lb_pair.active_id;
+    let epoch = clock.epoch;
+
+    let mut bins_crossed: u32 = 0;
+    let mut total_amount_in_with_fees: u64 = 0;
+    let mut total_trading_fee: u64 = 0;
+    let mut consumed_liquidity = false;
+
+    while lb_pair.active_id != target_bin_id {
+        let bin_array_key = BinArray::bin_id_to_bin_array_key(lb_pair_pubkey, lb_pair.active_id)?;
+
+        let mut active_bin_array = bin_arrays
+            .get(&bin_array_key)
+            .cloned()
+            .context("Missing bin array required for quote")?;
+
+        shift_active_bin_if_empty_gap(&mut lb_pair, &active_bin_array, swap_for_y)?;
+
+        loop {
+            if lb_pair.active_id == target_bin_id {
+                break;
+            }
+
+            if !active_bin_array.is_bin_id_within_range(lb_pair.active_id)? {
+                break;
+            }
+
+            lb_pair.update_volatility_accumulator()?;
+
+            let active_bin = active_bin_array.get_bin_mut(lb_pair.active_id)?;
+            let price = active_bin.get_or_store_bin_price(lb_pair.active_id, lb_pair.bin_step)?;
+
+            if !active_bin.is_empty(!swap_for_y) {
+                let bin_amount_in = active_bin.get_max_amount_in(price, swap_for_y)?;
+
+                if bin_amount_in > 0 {
+                    let bin_fee = lb_pair.compute_fee(bin_amount_in)?;
+                    let bin_amount_with_fee =
+                        bin_amount_in.checked_add(bin_fee).context("MathOverflow")?;
+
+                    total_amount_in_with_fees = total_amount_in_with_fees
+                        .checked_add(bin_amount_with_fee)
+                        .context("MathOverflow")?;
+                    total_trading_fee = total_trading_fee
+                        .checked_add(bin_fee)
+                        .context("MathOverflow")?;
+                    consumed_liquidity = true;
+                }
+            }
+
+            lb_pair.advance_active_bin(swap_for_y)?;
+            bins_crossed = bins_crossed.checked_add(1).context("MathOverflow")?;
+        }
+    }
+
+    ensure!(
+        consumed_liquidity,
+        "No liquidity available to reach target bin"
+    );
+
+    Ok(SwapToBinQuote {
+        target_bin: target_bin_id,
+        swap_for_y,
+        bins_crossed,
+        amount_in_with_fees: total_amount_in_with_fees,
+        trading_fee: total_trading_fee,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
