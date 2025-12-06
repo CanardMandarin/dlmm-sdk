@@ -270,6 +270,73 @@ pub fn quote_exact_in(
     })
 }
 
+pub fn get_bin_array_pubkeys_for_swap_2(
+    lb_pair_pubkey: Pubkey,
+    lb_pair: &LbPair,
+    bitmap_extension: Option<&BinArrayBitmapExtension>,
+    swap_for_y: bool,
+    take_count: u8,
+    ahead_count: u8,
+) -> Result<Vec<Pubkey>> {
+    let mut start_bin_array_idx = BinArray::bin_id_to_bin_array_index(lb_pair.active_id)?;
+    start_bin_array_idx = if start_bin_array_idx.is_negative() {
+        start_bin_array_idx - i32::from(ahead_count)
+    } else {
+        start_bin_array_idx + i32::from(ahead_count)
+    };
+
+    let mut bin_array_idx = vec![];
+    let increment = if swap_for_y { -1 } else { 1 };
+
+    loop {
+        if bin_array_idx.len() == take_count as usize {
+            break;
+        }
+
+        if lb_pair.is_overflow_default_bin_array_bitmap(start_bin_array_idx) {
+            let Some(bitmap_extension) = bitmap_extension else {
+                break;
+            };
+            let Ok((next_bin_array_idx, has_liquidity)) = bitmap_extension
+                .next_bin_array_index_with_liquidity(swap_for_y, start_bin_array_idx)
+            else {
+                // Out of search range. No liquidity.
+                break;
+            };
+            if has_liquidity {
+                bin_array_idx.push(next_bin_array_idx);
+                start_bin_array_idx = next_bin_array_idx + increment;
+            } else {
+                // Switch to internal bitmap
+                start_bin_array_idx = next_bin_array_idx;
+            }
+        } else {
+            let Ok((next_bin_array_idx, has_liquidity)) = lb_pair
+                .next_bin_array_index_with_liquidity_internal(swap_for_y, start_bin_array_idx)
+            else {
+                break;
+            };
+            if has_liquidity {
+                bin_array_idx.push(next_bin_array_idx);
+                start_bin_array_idx = next_bin_array_idx + increment;
+            } else {
+                // Switch to external bitmap
+                start_bin_array_idx = next_bin_array_idx;
+            }
+        }
+    }
+
+    let bin_array_pubkeys = bin_array_idx
+        .into_iter()
+        .map(|idx| derive_bin_array_pda(lb_pair_pubkey, idx.into()).0)
+        .collect();
+
+    Ok(bin_array_pubkeys)
+}
+
+
+
+
 pub fn get_bin_array_pubkeys_for_swap(
     lb_pair_pubkey: Pubkey,
     lb_pair: &LbPair,
@@ -278,6 +345,7 @@ pub fn get_bin_array_pubkeys_for_swap(
     take_count: u8,
 ) -> Result<Vec<Pubkey>> {
     let mut start_bin_array_idx = BinArray::bin_id_to_bin_array_index(lb_pair.active_id)?;
+
     let mut bin_array_idx = vec![];
     let increment = if swap_for_y { -1 } else { 1 };
 
@@ -368,7 +436,6 @@ pub fn quote_amount_in_to_reach_bin(
     let mut total_amount_in: u64 = 0;
     let mut total_amount_in_with_fees: u64 = 0;
     let mut total_trading_fee: u64 = 0;
-    let mut consumed_liquidity = false;
 
     while lb_pair.active_id != target_bin_id {
         let bin_array_key = BinArray::bin_id_to_bin_array_key(lb_pair_pubkey, lb_pair.active_id)?;
@@ -411,7 +478,6 @@ pub fn quote_amount_in_to_reach_bin(
                     total_trading_fee = total_trading_fee
                         .checked_add(bin_fee)
                         .context("MathOverflow")?;
-                    consumed_liquidity = true;
                 }
             }
 
@@ -419,11 +485,6 @@ pub fn quote_amount_in_to_reach_bin(
             bins_crossed = bins_crossed.checked_add(1).context("MathOverflow")?;
         }
     }
-
-    ensure!(
-        consumed_liquidity,
-        "No liquidity available to reach target bin"
-    );
 
     Ok(SwapToBinQuote {
         target_bin: target_bin_id,
